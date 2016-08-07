@@ -1,0 +1,440 @@
+<?php
+/**
+ * The QuadrigaAPI class offers functions to make calls
+ * to the QuadrigaCX API v2 and deal with the JSON results.
+ *
+ * See the QuadrigaCX API documentation for more information:
+ *   https://www.quadrigacx.com/api_info
+ *
+ * Copyright (c) 2016 Mike Mallett <mike@nerdcore.net>
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * HAVE A NICE DAY.
+ */
+
+class QuadrigaAPI {
+    public function __construct() {
+        $this->credentials = array();
+    }
+
+    /**
+     * Load credentials from file. This is not necessary for Public
+     * API calls such as the Ticker.
+     *
+     * This will attempt to read the given filename for credentials,
+     * defaulting to $HOME/.quadriga.conf
+     */
+    public function load_credentials($filename = NULL) {
+        if ($filename === NULL) {
+            $filename = getenv('HOME') . DIRECTORY_SEPARATOR . '.quadriga.conf';
+        }
+        $credentials_file = fopen($filename, 'r');
+
+        if ($credentials_file === FALSE) {
+            print 'Unable to open credentials file!' . PHP_EOL;
+            return FALSE;
+        }
+
+        while (($credentials_line = fgets($credentials_file)) !== FALSE) {
+            // Ignore blank lines and lines beginning with '#'
+            if (substr($credentials_line, 0, 1) == '#' || strlen($credentials_line) == 0) {
+                continue;
+            }
+
+            // Split line on '='
+            $line = explode('=', trim($credentials_line), 2);
+            $this->credentials[$line[0]] = $line[1];
+        }
+
+        // If necessary credentials are not found, return FALSE.
+        if (strlen($this->credentials['QUADRIGA_API_KEY']) > 1 ||
+            strlen($this->credentials['QUADRIGA_API_SECRET']) > 1 ||
+            intval($this->credentials['QUADRIGA_CLIENT_ID'] > 1)) {
+            return TRUE;
+        } else {
+            print 'Unable to read credentials from ' . $filename;
+            return FALSE;
+        }
+    }
+
+    /**
+     * Common function to create a new cURL object for all API calls both
+     * Public and Private.
+     *
+     * Parameters:
+     * str $api_func - The API Function to call; Complete query string
+     *                 including any '?' GET variables required.
+     *                 Example: 'ticker?book=btc_usd'
+     */
+    private function _curler($api_func) {
+        if (strlen($api_func) < 1) {
+            return NULL;
+        }
+
+        $curler = curl_init('https://api.quadrigacx.com/v2/' . $api_func);
+        curl_setopt($curler, CURLOPT_RETURNTRANSFER, TRUE);
+
+        return $curler;
+    }
+
+    /**
+     * Common functionality to generate a cURL object and retrieve
+     * data from the Public API Functions which do not require
+     * authentication and use HTTP GET variables.
+     *
+     * Returns a json_decoded array or FALSE on failure.
+     */
+    private function _public_api($api_func = '', $gets = array()) {
+        // Refuse to call a non-existent API Function.
+        if (strlen($api_func) < 1) {
+            return FALSE;
+        }
+
+        // Add any GET variables required.
+        if (count($gets) > 0) {
+            $api_func .= '?';
+            foreach ($gets as $gk => $gv) {
+                $api_func .= $gk . '=' . $gv / '&';
+            }
+            // Strip the trailing '&' added during the foreach()
+            $api_func = trim($api_func, '&');
+        }
+        
+        $curler = $this->_curler($api_func);
+        if ($curler == NULL) {
+            return FALSE;
+        }
+        return json_decode(curl_exec($curler));
+    }
+
+    /**
+     * Common functionality to generate a cURL object and retrieve
+     * data from the Private API Functions which require authentication
+     * (loaded credentials) and use HTTP POST variables.
+     *
+     * Returns a json_decoded array or FALSE on failure.
+     */
+    private function _private_api($api_func = '', $post = array()) {
+        // Refuse to call a non-existent API Function.
+        if (strlen($api_func) < 1) {
+            return FALSE;
+        }
+
+        // Ensure we have loaded proper credentials first.
+        if (strlen($this->credentials['QUADRIGA_API_KEY']) < 1 ||
+            strlen($this->credentials['QUADRIGA_API_SECRET']) < 1 ||
+            intval($this->credentials['QUADRIGA_CLIENT_ID'] < 1)) {
+            $this->load_credentials();
+        }
+
+        $curler = $this->_curler($api_func);
+        if ($curler == NULL) {
+            return FALSE;
+        }
+
+        // nonce must increase for each API call so we use a smaller grain than 1s
+        $nonce = intval(microtime(TRUE) * 100000);
+        $post['key'] = $this->credentials['QUADRIGA_API_KEY'];
+        $post['nonce'] = $nonce;
+        $post['signature'] = hash_hmac('sha256', $nonce . $this->credentials['QUADRIGA_CLIENT_ID'] . $this->credentials['QUADRIGA_API_KEY'], $this->credentials['QUADRIGA_API_SECRET']);
+
+        $post_json = json_encode($post);
+        curl_setopt($curler, CURLOPT_CUSTOMREQUEST, "POST");
+        curl_setopt($curler, CURLOPT_POSTFIELDS, $post_json);
+        curl_setopt($curler, CURLOPT_HTTPHEADER, array(
+            'Content-Type: application/json; charset=utf-8',
+            'Content-Length: ' . strlen($post_json))
+        );
+        return json_decode(curl_exec($curler));
+    }
+
+    /**** PUBLIC API CALLS ****/
+
+    /**
+     * The QuadrigaCX Ticker returns data regarding the
+     * trading information for a given book (default btc_cad).
+     *
+     * Available books are:
+     *   btc_cad
+     *   btc_usd
+     *   eth_btc
+     *   eth_cad
+     */
+    public function ticker($book = NULL) {
+        if ($book === NULL) {
+            return $this->_public_api('ticker');
+        } else {
+            return $this->_public_api('ticker', array('book' => $book));
+        }
+    }
+
+    /**
+     * The public Order Book returns a listing of all open
+     * orders for a given book (default btc_cad).
+     *
+     * Optional Parameters:
+     *   str  $book  - The order book to retrieve.
+     *   bool $group - Whether or not to group orders of the same price (Default true).
+     */
+    public function order_book($book = NULL, $group = NULL) {
+        $gets = array();
+        if ($book !== NULL) {
+            $gets['book'] = $book;
+        }
+        if ($group !== NULL) {
+            $gets['group'] = ($group)?'1':'0';
+        }
+        return $this->_public_api('order_book', $gets);
+    }
+
+    /**
+     * Transactions returns a list of recent trades
+     *
+     * Optional Parameters:
+     *   str $book - The order book to retrieve (Default: btc_cad)
+     *   str $time - Time frame for exported data ('minute' / 'hour', Default: hour)
+     */
+    public function transactions($book = NULL, $time = NULL) {
+        $gets = array();
+        if ($book !== NULL) {
+            $gets['book'] = $book;
+        }
+        if ($time !== NULL && ($time == 'minute' || $time == 'hour')) {
+            $gets['time'] = $time;
+        }
+        return $this->_public_api('transactions', $gets);
+    }
+    
+    /**** PRIVATE API CALLS ****/
+
+    /**
+     * Obtain balance of a QuadrigaCX account.
+     *
+     * Returns array of account's balances, such as but not limited to:
+     *
+     *    cad_balance - CAD balance
+     *    btc_balance - BTC balance
+     *    cad_reserved - CAD reserved in open orders
+     *    btc_reserved - BTC reserved in open orders
+     *    cad_available - CAD available for trading
+     *    btc_available - BTC available for trading
+     *    fee - customer trading fee
+     */
+    public function balance() {
+        return $this->_private_api('balance');
+    }
+
+    /**
+     * Return array of account's current open orders.
+     */
+    public function open_orders() {
+        return $this->_private_api('open_orders');
+    }
+
+    /**
+     * Return array of a specific order.
+     *
+     * Parameters:
+     *   str $id – a single or array of 64 characters long
+     *             hex string(s) taken from the list of orders
+     */
+    public function lookup_order($id = '') {
+        if (is_array($id)) {
+            $id = json_encode($id);
+        }
+        return $this->_private_api('lookup_order', array('id' => $id));
+    }
+
+    /**
+     * Cancel an order. Returns TRUE on success, FALSE otherwise.
+     */
+    public function cancel_order($id = '') {
+        // Strip '0x' from start of string
+        if (substr($id, 0, 2) == '0x') {
+            $id = substr($id, 2, 64);
+        }
+        if (strlen($id) != 64) {
+            return FALSE;
+        }
+
+        // Get the API result and return a PHP boolean
+        $res = $this->_private_api('cancel_order', array('id' => $id));
+        if ($res == 'true') {
+            return TRUE;
+        } else {
+            return FALSE;
+        }
+    }
+
+    /**
+     * Return list of account's transaction history.
+     *
+     * Parameters:
+     *   str  $book  - The book to retrieve (Default: btc_cad)
+     *   int  $offset - Skip a number of transactions returned from the API
+     *                  (Default: 0)
+     *   int  $limit - Limit the number of results returned from the API
+     *                 (Default: 100)
+     *   bool $sort - Sort the list by date+time TRUE = ASC, FALSE = DESC
+     *                (Default: Do not sort)
+     *   str  $prune - Prune the results: 'trades' shows only trades,
+     *                'funds' shows only funding transactions. (Default: no pruning)
+     */
+    public function user_transactions($book = NULL, $offset = 0, $limit = 100, $sort = NULL, $prune = NULL) {
+        $post_array = array();
+        if ($book !== NULL) {
+            $post_array['book'] = $book;
+        }
+        if ($sort !== NULL) {
+            $post_array['sort'] = ($sort)?'asc':'desc';
+        }
+        $post_array['offset'] = $offset;
+        $post_array['limit'] = $limit;
+        $xactions = $this->_private_api('user_transactions', $post_array);
+        // The API does not include a key 'id' for funding transactions, so
+        // the existence of 'id' key indicates a trade.
+        switch($prune) {
+        case 'trades':
+            $ret = array();
+            foreach ($xactions as $xaction) {
+                if (!isset($xaction->id)) {
+                    continue;
+                }
+                $ret[$xaction->id] = $xaction;
+            }
+            return $ret;
+        case 'funds':
+            $ret = array();
+            foreach ($xactions as $xaction) {
+                if (isset($xaction->id)) {
+                    continue;
+                }
+                $ret[$xaction->id] = $xaction;
+            }
+            return $ret;
+        default:
+            return $xactions;
+        }
+    }
+
+    /**
+     * Returns a string of a Bitcoin address for deposits into a
+     * QuadrigaCX account.
+     */
+    public function btc_in() {
+        return $this->_private_api('bitcoin_deposit_address');
+    }
+
+    /**
+     * Request the QuadrigaCX API generate a new transaction to send
+     * BTC to a given address. Returns TRUE on success, FALSE on failure.
+     *
+     * Parameters:
+     *   str $addr - The bitcoin address to send to.
+     *   flt $amount - The amount to send.
+     */
+    public function btc_out($addr = '', $amount = 0) {
+        // Do not attempt a withdrawal through the API unless the address
+        // appears valid and the amount > 0
+        if (strlen($addr) != 34 || floatval($amount) == 0) {
+            return FALSE;
+        }
+        $post_array = array('address' => $addr,
+                            'amount' => $amount);
+        if ($this->_private_api('bitcoin_withdrawal', $post_array) == 'OK') {
+            return TRUE;
+        } else {
+            return FALSE;
+        }
+    }
+
+    /**
+     * Returns a Ethereum address for deposits into a QuadrigaCX account.
+     */
+    public function eth_in() {
+        return $this->_private_api('ether_deposit_address');
+    }
+
+    /**
+     * Request the QuadrigaCX API generate a new transaction to send
+     * Ethereum to a given address. Returns TRUE on success, FALSE on
+     * failure.
+     *
+     * Parameters:
+     *   str $addr - The Ethereum address to send to.
+     *   flt $amount - The amount to send.
+     */
+    public function eth_out($addr = '', $amount = 0) {
+        // Refuse to ask for an empty transaction
+        if (floatval($amount) == 0) {
+            return FALSE;
+        }
+        $post_array = array('address' => $addr,
+                            'amount' => $amount);
+        if ($this->_private_api('ether_withdrawal', $post_array) == 'OK') {
+            return TRUE;
+        } else {
+            return FALSE;
+        }
+    }
+
+    /**
+     * Place a Buy order with the QuadrigaCX API. If $price is
+     * specified, it will be passed along to the API which
+     * creates a Limit Order, otherwise a Market Order is placed.
+     * See the API documentation for more info.
+     */
+    public function buy($book = NULL, $amount = 0, $price = NULL) {
+        $post = array();
+
+        if (floatval($amount) == 0) {
+            return FALSE;
+        } else {
+            $post['amount'] = $amount;
+        }
+        if ($book !== NULL) {
+            $post['book'] = $book;
+        }
+        if ($price !== NULL) {
+            $post['price'] = $price;
+        }
+
+        return $this->_private_api('buy', $post);
+    }
+
+    /**
+     * Place a Sell order with the QuadrigaCX API. If $price is
+     * specified, it will be passed along to the API which
+     * creates a Limit Order, otherwise a Market Order is placed.
+     * See the API documentation for more info.
+     */
+    public function sell($book = NULL, $amount = 0, $price = NULL) {
+        $post = array();
+
+        if (floatval($amount) == 0) {
+            return FALSE;
+        } else {
+            $post['amount'] = $amount;
+        }
+        if ($book !== NULL) {
+            $post['book'] = $book;
+        }
+        if ($price !== NULL) {
+            $post['price'] = $price;
+        }
+
+        return $this->_private_api('sell', $post);
+    }
+}
