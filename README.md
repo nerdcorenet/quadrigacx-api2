@@ -14,9 +14,9 @@ file is $HOME/.quadriga.conf but a separate file can be specified by
 calling the object's `load_credentials('filename.conf');` function
 after initialization. Three values should be defined in this file:
 
-> QUADRIGA_CLIENT_ID=[Your Client ID]
-> QUADRIGA_API_KEY=[Your API Key]
-> QUADRIGA_SPI_SECRET=[Your API Secret]
+  QUADRIGA_CLIENT_ID=[Your Client ID]
+  QUADRIGA_API_KEY=[Your API Key]
+  QUADRIGA_SPI_SECRET=[Your API Secret]
 
 FUNCTION NAMES
 --------------
