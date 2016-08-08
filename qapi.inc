@@ -340,8 +340,12 @@ class QuadrigaAPI {
      * Returns a string of a Bitcoin address for deposits into a
      * QuadrigaCX account.
      */
-    public function btc_in() {
+    public function bitcoin_deposit_address() {
         return $this->_private_api('bitcoin_deposit_address');
+    }
+    /* Alias for bitcoin_deposit_address */
+    public function btc_in() {
+        return $this->bitcoin_deposit_address();
     }
 
     /**
@@ -352,7 +356,7 @@ class QuadrigaAPI {
      *   str $addr - The bitcoin address to send to.
      *   flt $amount - The amount to send.
      */
-    public function btc_out($addr = '', $amount = 0) {
+    public function bitcoin_wthdrawal($addr = '', $amount = 0) {
         // Do not attempt a withdrawal through the API unless the address
         // appears valid and the amount > 0
         if (strlen($addr) != 34 || floatval($amount) == 0) {
@@ -366,12 +370,20 @@ class QuadrigaAPI {
             return FALSE;
         }
     }
+    /* Alias for function bitcoin_withdrawal */
+    public function btc_out($address, $amount) {
+        return $this->bitcoin_withdrawal($address, $amount);
+    }
 
     /**
      * Returns a Ethereum address for deposits into a QuadrigaCX account.
      */
-    public function eth_in() {
+    public function ether_deposit_address() {
         return $this->_private_api('ether_deposit_address');
+    }
+    /* Alias for function ether_deposit_address */
+    public function eth_in() {
+        return $this->ether_deposit_address();
     }
 
     /**
@@ -383,7 +395,7 @@ class QuadrigaAPI {
      *   str $addr - The Ethereum address to send to.
      *   flt $amount - The amount to send.
      */
-    public function eth_out($addr = '', $amount = 0) {
+    public function ether_withdrawal($addr = '', $amount = 0) {
         // Refuse to ask for an empty transaction
         if (floatval($amount) == 0) {
             return FALSE;
@@ -395,6 +407,10 @@ class QuadrigaAPI {
         } else {
             return FALSE;
         }
+    }
+    /* Alias for function ether_withdrawal */
+    public function eth_out($address, $amount) {
+        return $this->ether_withdrawal($address, $amount);
     }
 
     /**
