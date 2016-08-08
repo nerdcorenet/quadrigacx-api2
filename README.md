@@ -34,7 +34,7 @@ account.
 
 Aliases have been created for the following functions:
 
-bitcoin_deposit_address = btc_in
-bitcoin_withdrawal = btc_out
-ether_deposit_address = eth_in
-ether_withdrawal = eth_in
+    bitcoin_deposit_address = btc_in
+    bitcoin_withdrawal = btc_out
+    ether_deposit_address = eth_in
+    ether_withdrawal = eth_in
