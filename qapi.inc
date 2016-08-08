@@ -26,7 +26,11 @@
 
 class QuadrigaAPI {
     public function __construct() {
-        $this->credentials = array();
+        $this->credentials = array(
+            'QUADRIGA_API_KEY' => NULL,
+            'QUADRIGA_API_SECRET' => NULL,
+            'QUADRIGA_CLIENT_ID' => NULL,
+        );
     }
 
     /**
