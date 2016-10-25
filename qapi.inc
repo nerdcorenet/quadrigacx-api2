@@ -113,7 +113,7 @@ class QuadrigaAPI {
         if (count($gets) > 0) {
             $api_func .= '?';
             foreach ($gets as $gk => $gv) {
-                $api_func .= $gk . '=' . $gv / '&';
+                $api_func .= $gk . '=' . $gv . '&';
             }
             // Strip the trailing '&' added during the foreach()
             $api_func = trim($api_func, '&');
