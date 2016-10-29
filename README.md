@@ -38,3 +38,15 @@ Aliases have been created for the following functions:
     bitcoin_withdrawal = btc_out
     ether_deposit_address = eth_in
     ether_withdrawal = eth_in
+
+EXCHANGE FUNCTION
+-----------------
+
+A function called "exchange" will attempt to determine if the given
+book name is valid. If so, it proceeds with a regular Sell Order (at
+Market price). If it determines that the given book name is backwards
+(ex "cad_btc") then it checks the ticker value for the appropriate
+book and uses the "ask" price to invert the value and reverse the book
+name before placing a Buy Order at Market price. This allows you to
+"exchange 100 CAD into BTC" which is not directly supported by the
+API.

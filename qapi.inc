@@ -118,7 +118,7 @@ class QuadrigaAPI {
             // Strip the trailing '&' added during the foreach()
             $api_func = trim($api_func, '&');
         }
-        
+
         $curler = $this->_curler($api_func);
         if ($curler == NULL) {
             return FALSE;
@@ -165,6 +165,49 @@ class QuadrigaAPI {
             'Content-Length: ' . strlen($post_json))
         );
         return json_decode(curl_exec($curler));
+    }
+
+    /**
+     * Check that a given book is valid.
+     *
+     * If the book is valid, return TRUE.
+     * If the book is of the form "min_maj" (reversed, see API
+     * documentation for details), return FALSE.
+     * If either currency code is not recognized, or the two
+     * currencies do not form a valid book (ex "cad_usd") return NULL.
+     */
+    private function _validate_book($book) {
+        $valid_books = array('btc_cad', 'btc_usd', 'eth_btc', 'eth_cad');
+        foreach ($valid_books as $b) {
+            if ($book == $b) { return TRUE; }
+            if ($this->_reverse_book($book) == $b) { return FALSE; }
+        }
+        return NULL;
+    }
+
+    private function _reverse_book($book) {
+        $currencies = explode('_', $book);
+        if (count($currencies) != 2) { return NULL; }
+        return implode('_', array($currencies[1], $currencies[0]));
+    }
+
+    /**
+     * Round off the given amount depending on the major currency.
+     * Return the rounded value, or 0 on error (On the assumption it
+     * is better to pass '0' to the API than NULL)
+     */
+    private function _book_round($book, $amount) {
+        $currencies = explode('_', $book);
+        if (count($currencies) != 2) { return 0; }
+        $maj = $currencies[0];
+        if ($maj == 'btc' || $maj == 'eth') {
+            $precision = 8;
+        } else if ($maj == 'cad' || $maj == 'usd') {
+            $precision = 2;
+        } else {
+            return 0;
+        }
+        return round($amount, $precision);
     }
 
     /**** PUBLIC API CALLS ****/
@@ -223,7 +266,7 @@ class QuadrigaAPI {
         }
         return $this->_public_api('transactions', $gets);
     }
-    
+
     /**** PRIVATE API CALLS ****/
 
     /**
@@ -425,7 +468,7 @@ class QuadrigaAPI {
         if (floatval($amount) == 0) {
             return FALSE;
         } else {
-            $post['amount'] = $amount;
+            $post['amount'] = $this->_book_round($book, $amount);
         }
         if ($book !== NULL) {
             $post['book'] = $book;
@@ -449,7 +492,7 @@ class QuadrigaAPI {
         if (floatval($amount) == 0) {
             return FALSE;
         } else {
-            $post['amount'] = $amount;
+            $post['amount'] = $this->_book_round($book, $amount);
         }
         if ($book !== NULL) {
             $post['book'] = $book;
@@ -459,5 +502,34 @@ class QuadrigaAPI {
         }
 
         return $this->_private_api('sell', $post);
+    }
+
+    /**
+     * The exchange function determines if the given book is either valid
+     * or reversed, and issues a Sell Order or Buy Order as appropriate. If
+     * a reversed book is givem (ex "cad_btc") then the ticker values for
+     * the correct book are checked, the amount adjusted, and an Order
+     * placed.
+     *
+     * Examples:
+     *   exchange btc_cad 1 = Sell 1 on the btc_cad book
+     *   exchange cad_btc 1 = Check ticker, adjust amount, reverse book and
+     *                        place Buy Order on the btc_cad book
+     */
+    public function exchange($book = NULL, $amount = 0) {
+        $vbook = $this->_validate_book($book);
+        if ($vbook === TRUE) {
+            // Book is valid so simply place a Sell Order for the specified amount
+            return $this->sell($book, $amount);
+        } else if ($vbook === FALSE) { // Reversed book
+            $book = $this->_reverse_book($book);
+            // Check the 'ask' rate, as this is what we will get now when
+            // exchanging in this (reversed) direction
+            $ticker = $this->ticker($book);
+            $amount = $amount / $ticker->ask;
+            return $this->buy($book, $amount);
+        } else {
+            return FALSE;
+        }
     }
 }
