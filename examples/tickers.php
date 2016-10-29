@@ -5,7 +5,7 @@ require_once('../qapi.inc');
 
 $qapi = new QuadrigaAPI();
 
-$books = array('btc_cad', 'btc_usd', 'eth_btc', 'eth_cad');
+$books = $qapi->get_books();
 $tickers = array();
 
 foreach ($books as $book) {

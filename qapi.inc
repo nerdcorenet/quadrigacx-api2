@@ -168,6 +168,20 @@ class QuadrigaAPI {
     }
 
     /**
+     * Return an array of all valid book names.
+     *
+     * This will be useful as more books get added; Simply update this list.
+     */
+    public function get_books() {
+        return array(
+            'btc_cad',
+            'btc_usd',
+            'eth_btc',
+            'eth_cad',
+        );
+    }
+
+    /**
      * Check that a given book is valid.
      *
      * If the book is valid, return TRUE.
@@ -177,7 +191,7 @@ class QuadrigaAPI {
      * currencies do not form a valid book (ex "cad_usd") return NULL.
      */
     public function validate_book($book) {
-        $valid_books = array('btc_cad', 'btc_usd', 'eth_btc', 'eth_cad');
+        $valid_books = $this->get_books();
         foreach ($valid_books as $b) {
             if ($book == $b) { return TRUE; }
             if ($this->reverse_book($book) == $b) { return FALSE; }
