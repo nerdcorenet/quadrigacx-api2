@@ -314,11 +314,80 @@ class QuadrigaAPI {
      *   str $id – a single or array of 64 characters long
      *             hex string(s) taken from the list of orders
      */
+    /***************************************
+     * SPECIAL NOTE OCTOBER 29, 2016
+     * THE QuadrigaCX API FUNCTION DOES NOT APPEAR TO WORK AS DESIGNED!
+     * It is returning "amount = 0.00000000" instead of the actual
+     * amount when processing a Buy Order.
+     * I have contacted them about this issue. The code below should be
+     * changed back to the simple API call once this is resolved.
+     * While this remains broken, we can obtain the necessary data via
+     * calls to user_transactions until we find the appropriate orders.
+     ***************************************/
+    /***************************************
+     * SECOND NOTE:
+     * It is unclear at this time what the expected JSON-encoded array
+     * of IDs is supposed to look like. Passing such an array seems to
+     * result in an error code.
+     * The workaround using user_transactions also addresses this issue.
+     ***************************************/
     public function lookup_order($id = '') {
+/*
         if (is_array($id)) {
             $id = json_encode($id);
         }
         return $this->_private_api('lookup_order', array('id' => $id));
+*/
+
+        // WORKAROUND
+        $offset = 0;
+        $limit = 100; // the API's default
+        $books = $this->get_books();
+        $ret = array();
+        if (!is_array($id)) {
+            $id = array($id);
+        }
+        // For every book...
+        foreach ($books as $book) {
+            $currencies = explode('_', $book);
+            $maj = $currencies[0];
+            $min = $currencies[1];
+            // If we have a history of transactions...
+            $xactions = $this->user_transactions($book, $offset, $limit, NULL, 'trades');
+            while (count($xactions) > 0) {
+                foreach ($xactions as $x) {
+                    foreach ($id as $i) {
+                        if ($x->order_id == $i) {
+                            // Here is the format given by the API:
+                            // amount book created id price status type updated
+                            $o = new stdClass();
+                            if ($x->$maj < 0) {
+                                $o->amount = 0 - $x->$maj;
+                            } else {
+                                $o->amount = $x->$maj;
+                            }
+                            $o->book = $book;
+                            $o->created = $x->datetime;
+                            $o->id = $i;
+                            // This is not 100% correct; "price" should be 0.00
+                            // if a Market Order was placed, but what the heck.
+                            $o->price = $x->rate;
+                            // From the API docs:
+                            // status - status of the order (-1 - cancelled; 0 - active; 1 - partially filled; 2 - complete)
+                            // So, I guess that if a transaction exists, we can say it was status 2
+                            $o->status = 2;
+                            // type - buy or sell (0 - buy; 1 - sell)
+                            $o->type = (($x->$min < 0) ? '0' : '1');
+                            $o->updated = $x->datetime;
+                            $ret[] = $o;
+                        }
+                    }
+                }
+                $offset += $limit;
+                $xactions = $this->user_transactions($book, $offset, $limit, NULL, 'trades');
+            }
+        }
+        return $ret;
     }
 
     /**
