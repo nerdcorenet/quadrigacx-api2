@@ -252,7 +252,7 @@ class QuadrigaAPI {
      *   str  $book  - The order book to retrieve.
      *   bool $group - Whether or not to group orders of the same price (Default true).
      */
-    public function order_book($book = NULL, $group = NULL) {
+    public function order_book($book = NULL, $group = TRUE) {
         $gets = array();
         if ($book !== NULL) {
             $gets['book'] = $book;
